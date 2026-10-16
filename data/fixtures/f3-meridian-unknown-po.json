@@ -1,0 +1,6 @@
+{
+  "email_id": "fixture-f3-meridian",
+  "from": "sales@meridian-elec.example",
+  "subject": "Confirmation for PO-45099",
+  "body": "Hi,\n\nWe confirm your order PO-45099 (our ref MEL-5531, 2026-10-14, USD):\n\n1) ME-MCC-BKT  MCC bucket 30A FVNR size 1   10 x 1850.00 = 18500.00  ETA 2026-11-10\n2) ME-CBL-4C6  Cable 4C 6 AWG armoured      400 x 22.00  = 8800.00   ETA 2026-11-10\n\nTotal USD 27300.00\n\nRegards,\nMeridian Electrical Ltd."
+}

@@ -1,0 +1,7 @@
+{
+  "email_id": "fixture-f2-apex",
+  "from": "ar@apexvalve.example",
+  "subject": "Invoice AVF-88213 against PO-45002",
+  "body": "Please find attached invoice AVF-88213 for purchase order PO-45002. Remit within 30 days.\n\nApex Valve & Fitting Co., Accounts Receivable",
+  "attachment_file": "invoice-apex-PO-45002.pdf"
+}

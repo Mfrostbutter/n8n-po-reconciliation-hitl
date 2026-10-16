@@ -1,0 +1,6 @@
+{
+  "email_id": "fixture-f1-northwind",
+  "from": "orders@northwind-supply.example",
+  "subject": "Order Confirmation OC-77120 for your PO-45001",
+  "body": "Hello,\n\nThank you for your purchase order PO-45001 dated 2026-10-01. We confirm the order as follows.\n\nOrder confirmation no: OC-77120\nDate: 2026-10-13\nCurrency: USD\n\nLine 1  NW-BRG-6205  Deep groove ball bearing 6205-2RS   Qty 300   @ 12.50   = 3750.00   ship 2026-10-20\nLine 2  NW-SEAL-40   Oil seal 40x62x8 NBR                Qty 500   @ 4.20    = 2100.00   ship 2026-10-20\nLine 3  NW-GRS-EP2   Lithium EP2 grease, 18 kg pail      Qty 60    @ 210.00  = 12600.00  ship 2026-10-25\n\nOrder total: USD 18450.00\n\nAll items are in stock. Freight prepaid and added per our agreement.\n\nBest regards,\nNorthwind Industrial Supply, Order Desk"
+}
