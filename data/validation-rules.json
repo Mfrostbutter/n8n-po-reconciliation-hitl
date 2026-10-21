@@ -1,0 +1,38 @@
+{
+  "_comment": "Seed for the data table om_poc_validation_rules. kind=rule rows are scored by EvaluateRules/ComputeDecision; kind=setting rows carry a threshold only. Seed with scripts/seed-validation-rules.py (public template copy).",
+  "table": "om_poc_validation_rules",
+  "columns": [
+    {"name": "rule_id", "type": "string"},
+    {"name": "name", "type": "string"},
+    {"name": "kind", "type": "string"},
+    {"name": "weight", "type": "number"},
+    {"name": "hard", "type": "boolean"},
+    {"name": "enabled", "type": "boolean"},
+    {"name": "threshold", "type": "number"},
+    {"name": "description", "type": "string"}
+  ],
+  "rows": [
+    {"rule_id": "R1", "name": "PO exists in system of record", "kind": "rule", "weight": 3, "hard": true, "enabled": true, "threshold": null,
+     "description": "The extracted PO number matches a purchase order on record. Hard: a miss always routes to review."},
+    {"rule_id": "R2", "name": "Vendor matches PO vendor", "kind": "rule", "weight": 3, "hard": true, "enabled": true, "threshold": null,
+     "description": "Extracted vendor name overlaps the PO vendor, or the sender domain matches the vendor master. Hard."},
+    {"rule_id": "R3", "name": "Currency matches PO", "kind": "rule", "weight": 2, "hard": false, "enabled": true, "threshold": null,
+     "description": "Document currency equals the PO currency."},
+    {"rule_id": "R4", "name": "Line count matches PO", "kind": "rule", "weight": 1, "hard": false, "enabled": true, "threshold": null,
+     "description": "Number of extracted lines equals the number of PO lines."},
+    {"rule_id": "R5", "name": "Every line maps to a PO line", "kind": "rule", "weight": 2, "hard": false, "enabled": true, "threshold": null,
+     "description": "Each extracted line matches a PO line by SKU, or by line number as a fallback."},
+    {"rule_id": "R6", "name": "Quantities within ordered quantity", "kind": "rule", "weight": 2, "hard": false, "enabled": true, "threshold": null,
+     "description": "No extracted line quantity exceeds the ordered quantity."},
+    {"rule_id": "R7", "name": "Unit prices within tolerance of PO", "kind": "rule", "weight": 3, "hard": false, "enabled": true, "threshold": 2.0,
+     "description": "Per-line unit price drift against the PO, in percent. threshold = allowed drift."},
+    {"rule_id": "R8", "name": "Document total equals sum of lines", "kind": "rule", "weight": 1, "hard": false, "enabled": true, "threshold": 1.0,
+     "description": "Document total against the sum of extracted line totals. threshold = allowed difference in currency units."},
+    {"rule_id": "R9", "name": "Document total within tolerance of PO total", "kind": "rule", "weight": 2, "hard": false, "enabled": true, "threshold": 1.0,
+     "description": "Document total against the PO total, in percent. threshold = allowed drift."},
+    {"rule_id": "AUTO_THRESHOLD", "name": "Auto-post threshold", "kind": "setting", "weight": 0, "hard": false, "enabled": true, "threshold": 0.9,
+     "description": "A score at or above this posts without a human, unless a hard rule failed."},
+    {"rule_id": "AI_WEIGHT", "name": "Model confidence share of the score", "kind": "setting", "weight": 0, "hard": false, "enabled": true, "threshold": 0.3,
+     "description": "score = (1 - AI_WEIGHT) * weighted rules score + AI_WEIGHT * extraction_confidence."}
+  ]
+}

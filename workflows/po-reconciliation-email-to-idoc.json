@@ -1,18 +1,7 @@
 {
-  "name": "O&M PoC: Reconcile vendor PO response (email to IDoc)",
+  "name": "PO Reconciliation: vendor email to IDoc (HITL)",
   "nodes": [
     {
-      "parameters": {
-        "pollTimes": {
-          "item": [
-            {
-              "mode": "everyMinute"
-            }
-          ]
-        },
-        "filters": {},
-        "options": {}
-      },
       "id": "a72e1fc0-b8e9-5774-a1d2-957439ccc357",
       "name": "WatchOutlookInbox",
       "type": "n8n-nodes-base.microsoftOutlookTrigger",
@@ -21,16 +10,15 @@
         0,
         0
       ],
+      "parameters": {
+        "event": "messageReceived",
+        "output": "simple",
+        "filters": {}
+      },
       "disabled": true,
-      "notes": "Customer instance: attach the Outlook OAuth2 credential, filter on the AP mailbox folder, and add a Get Attachment step before NormalizeEmail. Disabled on the lab."
+      "notes": "Customer instance: attach the Outlook OAuth2 credential, filter on the AP mailbox folder, and add a Get Attachment step before NormalizeOutlookEmail. Disabled on the lab."
     },
     {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "om-po-response",
-        "responseMode": "responseNode",
-        "options": {}
-      },
       "id": "86bbbb3a-1ba2-534e-a74b-dfbd82e51aa4",
       "name": "ReceiveVendorEmailFixture",
       "type": "n8n-nodes-base.webhook",
@@ -39,57 +27,265 @@
         0,
         272
       ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "om-po-response",
+        "responseMode": "responseNode",
+        "options": {}
+      },
       "webhookId": "458fe196-67d6-5b04-ab52-9ced3d2c20f2",
       "notes": "Lab stand-in for the Outlook trigger. Body: {email_id, from, subject, body, attachment_base64?, attachment_name?}."
     },
     {
-      "parameters": {
-        "jsCode": "// Unify the Outlook trigger shape and the fixture webhook shape into one email envelope.\n// PDF attachments land in $binary.attachment; everything else is text.\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  const isWebhook = j.body !== undefined && j.headers !== undefined;\n  const src = isWebhook ? j.body : j;\n  const email = {\n    email_id: src.email_id || src.id || `fixture-${Date.now()}`,\n    source: isWebhook ? 'fixture' : 'outlook',\n    from: src.from?.emailAddress?.address || src.from || '',\n    subject: src.subject || '',\n    received_at: src.receivedDateTime || src.received_at || new Date().toISOString(),\n    body_text: typeof src.body === 'string' ? src.body : (src.body?.content || src.bodyPreview || ''),\n    has_pdf: false,\n  };\n  const binary = {};\n  if (src.attachment_base64) {\n    binary.attachment = {\n      data: src.attachment_base64, mimeType: 'application/pdf',\n      fileName: src.attachment_name || 'attachment.pdf', fileExtension: 'pdf',\n    };\n    email.has_pdf = true;\n  } else if (item.binary) {\n    const key = Object.keys(item.binary).find(k => (item.binary[k].mimeType || '').includes('pdf'));\n    if (key) { binary.attachment = item.binary[key]; email.has_pdf = true; }\n  }\n  out.push({ json: email, binary });\n}\nreturn out;"
-      },
-      "id": "1df0e423-6ff0-5553-a302-46f29804a237",
-      "name": "NormalizeEmail",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "7a43a7a0-88cc-51d7-8ecf-6ae1a706a3cb",
+      "name": "NormalizeOutlookEmail",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
       "position": [
         208,
         0
-      ]
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "32483aed-b801-5f39-a4ce-8c6993e541f6",
+              "name": "email_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "38866d42-f06f-51fd-8f60-972d967e765e",
+              "name": "source",
+              "value": "outlook",
+              "type": "string"
+            },
+            {
+              "id": "375207d8-3504-5777-9232-a87ed4005fda",
+              "name": "from",
+              "value": "={{ $json.from?.emailAddress?.address || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "2d3c4f13-c39c-5993-8d49-2dff9fcb0750",
+              "name": "subject",
+              "value": "={{ $json.subject || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "23865ca3-438d-54f1-9424-6a946516c91d",
+              "name": "received_at",
+              "value": "={{ $json.receivedDateTime || $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "31d75826-7e97-52b6-98e6-2a5d9d9f93e1",
+              "name": "body_text",
+              "value": "={{ $json.body?.content || $json.bodyPreview || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "ee86b822-f6eb-5da3-938d-0a86c5f06957",
+              "name": "has_pdf",
+              "value": "={{ Object.values($binary || {}).some(b => (b.mimeType || '').includes('pdf')) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "6f0d3d25-64f1-5c84-963c-19447963cd8b",
+              "name": "attachment_base64",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a0e7c3d9-b660-5f01-a9d2-8d0ad7556f9b",
+              "name": "attachment_name",
+              "value": "={{ Object.values($binary || {}).find(b => (b.mimeType || '').includes('pdf'))?.fileName || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {
+          "includeBinary": true
+        }
+      },
+      "notes": "Outlook message to the shared envelope. The PDF must arrive as $binary.attachment (Get Attachment node on the customer instance)."
     },
     {
+      "id": "b9cfa0a1-2c09-5d36-80e7-d61a97ddebc1",
+      "name": "NormalizeFixtureEmail",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        208,
+        272
+      ],
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
             {
-              "id": "a39ca1ee-b3bd-58e3-b082-9c9448f83a14",
-              "leftValue": "={{ $json.has_pdf }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
+              "id": "385353b5-5a1c-51c5-a3af-76dc8644b0ad",
+              "name": "email_id",
+              "value": "={{ $json.body.email_id || 'fixture-' + Date.now() }}",
+              "type": "string"
+            },
+            {
+              "id": "fdc6cd96-63df-5cf1-bf14-03e3c56ace30",
+              "name": "source",
+              "value": "fixture",
+              "type": "string"
+            },
+            {
+              "id": "04f8255b-1f38-525e-baa8-88dc54a5574c",
+              "name": "from",
+              "value": "={{ $json.body.from || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "5c41c48f-de30-516d-b006-c9ed04df3d27",
+              "name": "subject",
+              "value": "={{ $json.body.subject || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "64fb0480-5e2e-50c5-bd9d-8a80053b2993",
+              "name": "received_at",
+              "value": "={{ $json.body.received_at || $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "74a57a06-ca45-51c0-943c-4c4f2651548a",
+              "name": "body_text",
+              "value": "={{ typeof $json.body.body === 'string' ? $json.body.body : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "0f9d7825-e9d8-5384-bf7d-fbb866d41ad7",
+              "name": "has_pdf",
+              "value": "={{ !!$json.body.attachment_base64 }}",
+              "type": "boolean"
+            },
+            {
+              "id": "9a50f270-f5ea-5008-ad9a-807738c69513",
+              "name": "attachment_base64",
+              "value": "={{ $json.body.attachment_base64 || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "6ae27c47-5d2c-5c54-9e67-d19c3c925e39",
+              "name": "attachment_name",
+              "value": "={{ $json.body.attachment_name || 'attachment.pdf' }}",
+              "type": "string"
             }
-          ],
-          "combinator": "and"
+          ]
         },
+        "includeOtherFields": false,
         "options": {}
       },
-      "id": "fdf5d8fc-833e-5bde-8097-3aa2ed5b26f7",
-      "name": "HasPdfAttachment",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        464,
-        0
-      ]
+      "notes": "Fixture webhook body to the shared envelope. A base64 PDF rides along until DecodePdfAttachment turns it into a file."
     },
     {
+      "id": "249e8f38-80eb-5769-b444-ea40f20d5676",
+      "name": "RouteAttachment",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        0
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7d5a3f85-ddf3-5d26-9b81-9a60d7b5df06",
+                    "leftValue": "={{ $json.attachment_base64 }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "base64 pdf"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "3fea1666-96a8-57bd-be64-fa851af22f6a",
+                    "leftValue": "={{ $json.has_pdf }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "binary pdf"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "no pdf"
+        }
+      },
+      "notes": "Anchor for the email envelope: downstream reads $('RouteAttachment') for sender and subject."
+    },
+    {
+      "id": "135382ec-47d3-5112-ac5d-18127bfc8213",
+      "name": "DecodePdfAttachment",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "attachment_base64",
+        "binaryPropertyName": "attachment",
+        "options": {
+          "fileName": "={{ $json.attachment_name }}",
+          "mimeType": "application/pdf"
+        }
+      }
+    },
+    {
+      "id": "e5f6898e-0b10-58b0-ab02-e0372855807b",
+      "name": "ExtractPdfText",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        0
+      ],
       "parameters": {
         "operation": "pdf",
         "binaryPropertyName": "attachment",
@@ -97,30 +293,36 @@
           "joinPages": true
         }
       },
-      "id": "e5f6898e-0b10-58b0-ab02-e0372855807b",
-      "name": "ExtractPdfText",
-      "type": "n8n-nodes-base.extractFromFile",
-      "typeVersion": 1.1,
-      "position": [
-        672,
-        0
-      ],
       "onError": "continueErrorOutput"
     },
     {
-      "parameters": {
-        "jsCode": "// One document per email: the body plus the attachment text when a PDF was present.\nreturn $input.all().map(item => {\n  const email = item.json.email_id ? item.json : $('NormalizeEmail').first().json;\n  const pdfText = item.json.text || '';\n  const document_text = [\n    `EMAIL FROM: ${email.from}`,\n    `SUBJECT: ${email.subject}`,\n    `RECEIVED: ${email.received_at}`,\n    '',\n    '--- EMAIL BODY ---',\n    email.body_text || '(empty)',\n    pdfText ? `\\n--- ATTACHMENT TEXT ---\\n${pdfText}` : '',\n  ].join('\\n');\n  return { json: { ...email, document_text, pdf_pages: item.json.numpages || 0 } };\n});"
-      },
       "id": "a33c6f08-2ee1-5621-93c7-7687336035ad",
       "name": "BuildDocumentText",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
       "position": [
-        880,
+        1088,
         0
-      ]
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ (() => {\n  const { attachment_base64, attachment_name, ...email } = $('RouteAttachment').item.json;\n  const pdfText = $json.text || '';\n  const document_text = [\n    'EMAIL FROM: ' + email.from,\n    'SUBJECT: ' + email.subject,\n    'RECEIVED: ' + email.received_at,\n    '',\n    '--- EMAIL BODY ---',\n    email.body_text || '(empty)',\n    pdfText ? '\\n--- ATTACHMENT TEXT ---\\n' + pdfText : '',\n  ].join('\\n');\n  return { ...email, attachment_name: attachment_name || '', document_text, pdf_pages: $json.numpages || 0 };\n})() }}",
+        "includeOtherFields": false,
+        "options": {
+          "includeBinary": false
+        }
+      },
+      "notes": "One document per email: envelope plus the attachment text. The base64 field is dropped here."
     },
     {
+      "id": "8d5d69c4-7436-5d53-aa62-34de87d40f33",
+      "name": "ExtractPoFieldsWithAi",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        1296,
+        0
+      ],
       "parameters": {
         "text": "={{ $json.document_text }}",
         "schemaType": "manual",
@@ -129,20 +331,20 @@
           "systemPromptTemplate": "You are an accounts-payable extraction system. Read the vendor email and attachment text and return the purchase order response as JSON matching the schema. Numbers are plain numbers (9648.00, not \"9,648.00\"). Dates are YYYY-MM-DD. Copy part numbers exactly as printed. If a field is genuinely absent use an empty string, 0, or an empty array; never invent values. Set extraction_confidence low when the text is ambiguous, truncated, or the totals do not add up. Today is {{ $now.toFormat('yyyy-LL-dd') }}."
         }
       },
-      "id": "8d5d69c4-7436-5d53-aa62-34de87d40f33",
-      "name": "ExtractPoFieldsWithAi",
-      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
-      "typeVersion": 1.2,
-      "position": [
-        1088,
-        0
-      ],
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 2000,
       "onError": "continueErrorOutput"
     },
     {
+      "id": "82b410bf-a2ad-5031-b057-4e34d2726b34",
+      "name": "LmStudioExtractorModel",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1296,
+        272
+      ],
       "parameters": {
         "model": {
           "__rl": true,
@@ -151,27 +353,27 @@
         },
         "responsesApiEnabled": false,
         "options": {
-          "maxTokens": 4096,
-          "temperature": 0.1
+          "temperature": 0.1,
+          "maxTokens": 4096
         }
       },
-      "id": "82b410bf-a2ad-5031-b057-4e34d2726b34",
-      "name": "LmStudioExtractorModel",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-      "typeVersion": 1.3,
-      "position": [
-        1088,
-        272
-      ],
       "credentials": {
         "openAiApi": {
           "id": "REPLACE_ME",
           "name": "LM Studio (lab)"
         }
       },
-      "notes": "Lab model. Customer instance: swap for their approved provider (Azure OpenAI, Bedrock, or OpenRouter) by replacing this sub-node."
+      "notes": "Lab model; the base URL lives in the credential. Customer instance: swap for the approved provider (Anthropic) by replacing this sub-node."
     },
     {
+      "id": "f071bfef-68b5-5919-95e3-123c9ba6daa6",
+      "name": "LookupPurchaseOrder",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        0,
+        704
+      ],
       "parameters": {
         "operation": "executeQuery",
         "query": "select p.po_number, p.vendor_id, v.name as vendor_name, v.email_domain, p.currency, p.order_date, p.status, p.total_amount,\n  coalesce(jsonb_agg(jsonb_build_object('line_no', l.line_no, 'sku', l.sku, 'description', l.description,\n    'quantity', l.quantity, 'unit_price', l.unit_price, 'line_total', l.line_total, 'promised_date', l.promised_date)\n    order by l.line_no) filter (where l.line_no is not null), '[]'::jsonb) as lines\nfrom om_poc.purchase_orders p\njoin om_poc.vendors v on v.vendor_id = p.vendor_id\nleft join om_poc.po_lines l on l.po_number = p.po_number\nwhere upper(p.po_number) = upper($1)\ngroup by p.po_number, p.vendor_id, v.name, v.email_domain, p.currency, p.order_date, p.status, p.total_amount;",
@@ -179,41 +381,278 @@
           "queryReplacement": "={{ [$json.output.po_number || ''] }}"
         }
       },
-      "id": "f071bfef-68b5-5919-95e3-123c9ba6daa6",
-      "name": "LookupPurchaseOrder",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.7,
-      "position": [
-        0,
-        720
-      ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
-      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
           "id": "REPLACE_ME",
           "name": "Lab Postgres om_poc"
         }
       },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
       "onError": "continueErrorOutput",
+      "alwaysOutputData": true,
       "notes": "SAP stand-in. Customer instance: SAP OData/RFC read of EKKO/EKPO, same output shape."
     },
     {
-      "parameters": {
-        "jsCode": "// Business validation rules over the AI extraction against the PO on record.\n// Each rule: pass, weight, hard. A failed hard rule always routes to human review.\nconst AUTO_THRESHOLD = 0.90;      // score at or above this posts without a human\nconst PRICE_TOLERANCE_PCT = 2.0;  // per-line unit price drift allowed\nconst TOTAL_TOLERANCE_PCT = 1.0;  // document total vs PO total\nconst AI_WEIGHT = 0.30;           // share of the score taken from the model's self-reported confidence\n\nconst ex = $('ExtractPoFieldsWithAi').first().json.output || {};\nconst email = $('BuildDocumentText').first().json;\nconst po = $input.first().json || {};\nconst poFound = !!po.po_number;\nconst exLines = Array.isArray(ex.line_items) ? ex.line_items : [];\nconst poLines = Array.isArray(po.lines) ? po.lines : [];\n\nconst num = v => {\n  const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[^0-9.\\-]/g, ''));\n  return Number.isFinite(n) ? n : null;\n};\nconst pct = (a, b) => (b ? Math.abs(a - b) / Math.abs(b) * 100 : (a ? 100 : 0));\nconst cents = v => Math.round((num(v) ?? 0) * 100);\nconst norm = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');\n\nconst rules = [];\nconst add = (id, name, pass, detail, weight, hard = false) => rules.push({ id, name, pass: !!pass, detail, weight, hard });\n\nadd('R1', 'PO exists in system of record', poFound,\n  poFound ? `Found ${po.po_number}` : `No PO matching \"${ex.po_number ?? ''}\"`, 3, true);\n\nconst vendorMatch = poFound && (\n  norm(ex.vendor_name).includes(norm(po.vendor_name).slice(0, 8)) ||\n  norm(po.vendor_name).includes(norm(ex.vendor_name).slice(0, 8)) ||\n  norm(email.from).includes(norm(po.email_domain).slice(0, 10)));\nadd('R2', 'Vendor matches PO vendor', vendorMatch,\n  `Extracted \"${ex.vendor_name ?? ''}\", PO vendor \"${po.vendor_name ?? ''}\", sender ${email.from}`, 3, true);\n\nadd('R3', 'Currency matches PO', poFound && norm(ex.currency) === norm(po.currency),\n  `Extracted ${ex.currency ?? '?'}, PO ${po.currency ?? '?'}`, 2);\n\nadd('R4', 'Line count matches PO', poFound && exLines.length === poLines.length,\n  `${exLines.length} extracted vs ${poLines.length} on PO`, 1);\n\nlet qtyOk = true, priceOk = true, skuOk = true;\nconst notes = { sku: [], qty: [], price: [] };\nfor (const l of exLines) {\n  const m = poLines.find(p => norm(p.sku) === norm(l.sku)) || poLines.find(p => Number(p.line_no) === Number(l.line_no));\n  if (!m) { skuOk = false; notes.sku.push(`${l.sku ?? 'line ' + l.line_no}: not on PO`); continue; }\n  const q = num(l.quantity), oq = num(m.quantity);\n  if (q !== null && oq !== null && q > oq) { qtyOk = false; notes.qty.push(`${m.sku}: qty ${q} > ordered ${oq}`); }\n  const p = num(l.unit_price), op = num(m.unit_price);\n  if (p !== null && op !== null && pct(p, op) > PRICE_TOLERANCE_PCT) {\n    priceOk = false; notes.price.push(`${m.sku}: price ${p} vs PO ${op} (${pct(p, op).toFixed(1)}%)`);\n  }\n}\nadd('R5', 'Every line maps to a PO line', poFound && skuOk, notes.sku.join('; ') || 'All lines matched', 2);\nadd('R6', 'Quantities within ordered quantity', poFound && qtyOk, notes.qty.join('; ') || 'OK', 2);\nadd('R7', `Unit prices within ${PRICE_TOLERANCE_PCT}% of PO`, poFound && priceOk, notes.price.join('; ') || 'OK', 3);\n\nconst exTotal = num(ex.total_amount);\nconst sumLines = exLines.reduce((s, l) => s + (num(l.line_total) ?? (num(l.quantity) ?? 0) * (num(l.unit_price) ?? 0)), 0);\nadd('R8', 'Document total equals sum of lines', exTotal !== null && Math.abs(cents(exTotal) - cents(sumLines)) <= 100,\n  `Total ${exTotal} vs lines ${sumLines.toFixed(2)}`, 1);\nadd('R9', `Document total within ${TOTAL_TOLERANCE_PCT}% of PO total`,\n  poFound && exTotal !== null && pct(exTotal, num(po.total_amount)) <= TOTAL_TOLERANCE_PCT,\n  `Total ${exTotal} vs PO ${po.total_amount ?? '?'}`, 2);\n\nconst wTotal = rules.reduce((s, r) => s + r.weight, 0);\nconst wPass = rules.filter(r => r.pass).reduce((s, r) => s + r.weight, 0);\nconst rulesScore = wTotal ? wPass / wTotal : 0;\nconst aiConf = Math.min(1, Math.max(0, num(ex.extraction_confidence) ?? 0.5));\nconst score = Math.round(((1 - AI_WEIGHT) * rulesScore + AI_WEIGHT * aiConf) * 1000) / 1000;\nconst hardFail = rules.some(r => r.hard && !r.pass);\nconst decision = (!hardFail && score >= AUTO_THRESHOLD) ? 'auto' : 'review';\n\nreturn [{ json: {\n  email, extracted: ex, po: poFound ? po : null,\n  rule_results: rules,\n  rules_score: Math.round(rulesScore * 1000) / 1000,\n  ai_confidence: aiConf, score, threshold: AUTO_THRESHOLD, hard_fail: hardFail,\n  decision, status: decision === 'auto' ? 'auto_approved' : 'pending_review',\n  failed_rules: rules.filter(r => !r.pass).map(r => `${r.id} ${r.name}: ${r.detail}`),\n}}];"
-      },
-      "id": "65f33640-db21-5359-b896-20ca100e413e",
-      "name": "ApplyValidationRules",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "5ef2a96f-a68e-5648-906c-12d110b92c5d",
+      "name": "ValidationInput",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
       "position": [
         208,
-        720
-      ]
+        704
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ (() => {\n  const num = v => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[^0-9.\\-]/g, '')); return Number.isFinite(n) ? n : null; };\n  const key = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');\n  const email = $('BuildDocumentText').first().json;\n  const ex = $('ExtractPoFieldsWithAi').first().json.output || {};\n  const po = $json.po_number ? $json : null;\n  const lines = Array.isArray(ex.line_items) ? ex.line_items : [];\n  return {\n    email, extracted: { ...ex, line_items: lines }, po, po_found: !!po,\n    vendor_key: key(ex.vendor_name), po_vendor_key: key(po?.vendor_name),\n    sender_key: key(email.from), po_domain_key: key(po?.email_domain),\n    currency_key: key(ex.currency), po_currency_key: key(po?.currency),\n    line_count: lines.length, po_line_count: (po?.lines || []).length,\n    doc_total: num(ex.total_amount), po_total: po ? num(po.total_amount) : null,\n    ai_confidence: Math.min(1, Math.max(0, num(ex.extraction_confidence) ?? 0.5)),\n  };\n})() }}",
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "notes": "Header facts in one place: extraction, PO on record, normalized keys, parsed totals. Everything downstream reads $('ValidationInput')."
     },
     {
+      "id": "5bb94d84-eed8-504b-8e57-49431b817481",
+      "name": "SplitOutExtractedLines",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1.1,
+      "position": [
+        416,
+        704
+      ],
+      "parameters": {
+        "fieldToSplitOut": "extracted.line_items",
+        "include": "noOtherFields",
+        "options": {}
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "f2b8d32f-d55d-52af-91fc-8d6576c3d4ba",
+      "name": "CheckLine",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        624,
+        704
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ (() => {\n  const l = $json;\n  if (l.sku === undefined && l.line_no === undefined) return { empty: true };\n  const num = v => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[^0-9.\\-]/g, '')); return Number.isFinite(n) ? n : null; };\n  const key = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');\n  const poLines = $('ValidationInput').first().json.po?.lines || [];\n  const m = poLines.find(p => key(p.sku) === key(l.sku)) || poLines.find(p => Number(p.line_no) === Number(l.line_no)) || null;\n  const qty = num(l.quantity), price = num(l.unit_price);\n  const poQty = m ? num(m.quantity) : null, poPrice = m ? num(m.unit_price) : null;\n  const drift = price !== null && poPrice ? Math.round(Math.abs(price - poPrice) / Math.abs(poPrice) * 1000) / 10 : (price !== null && poPrice === 0 ? 100 : 0);\n  return {\n    sku: l.sku ?? null, line_no: l.line_no ?? null, description: l.description ?? null,\n    quantity: qty, unit_price: price, line_total: num(l.line_total) ?? (qty ?? 0) * (price ?? 0),\n    matched: !!m, po_line_no: m?.line_no ?? null, po_sku: m?.sku ?? null,\n    po_quantity: poQty, po_unit_price: poPrice,\n    qty_over: qty !== null && poQty !== null && qty > poQty,\n    price_drift_pct: drift,\n  };\n})() }}",
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "notes": "One item per extracted line: the matching PO line, quantity over, price drift in percent. Facts only; the thresholds apply in EvaluateRules."
+    },
+    {
+      "id": "2eb4eb2b-3465-59b2-863e-932e1d9b4288",
+      "name": "CollectLineChecks",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        832,
+        704
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "line_checks",
+        "include": "allFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "1bc71667-1be3-5e13-bfcf-62a0a4ede0f9",
+      "name": "GetValidationRules",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        1136
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "om_poc_validation_rules"
+        },
+        "matchType": "anyCondition",
+        "filters": {},
+        "returnAll": true
+      },
+      "notes": "Rule registry and thresholds: rule_id, name, kind (rule | setting), weight, hard, enabled, threshold. Edit the table, not the workflow."
+    },
+    {
+      "id": "7716f25a-4f7c-5bcc-bec6-8aa8e8dd80e8",
+      "name": "CollectRules",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        208,
+        1136
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "rules",
+        "include": "allFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "710fc230-a04d-59c6-90de-4ac30f21148f",
+      "name": "EvaluateRules",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        416,
+        1136
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "87257edb-de25-54d6-a557-a716381f35a9",
+              "name": "pass_R1",
+              "value": "={{ $('ValidationInput').first().json.po_found }}",
+              "type": "boolean"
+            },
+            {
+              "id": "359e5bad-7ebe-57f9-a81c-03845efe2c7b",
+              "name": "detail_R1",
+              "value": "={{ (v => v.po_found ? 'Found ' + v.po.po_number : 'No PO matching \"' + (v.extracted.po_number ?? '') + '\"')($('ValidationInput').first().json) }}",
+              "type": "string"
+            },
+            {
+              "id": "895b57c4-4808-5bac-a0ad-99781d76a071",
+              "name": "pass_R2",
+              "value": "={{ (v => v.po_found && (v.vendor_key.includes(v.po_vendor_key.slice(0, 8)) || v.po_vendor_key.includes(v.vendor_key.slice(0, 8)) || v.sender_key.includes(v.po_domain_key.slice(0, 10))))($('ValidationInput').first().json) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "bd6c613c-58cb-5e92-8907-ff93bc525e41",
+              "name": "detail_R2",
+              "value": "={{ (v => 'Extracted \"' + (v.extracted.vendor_name ?? '') + '\", PO vendor \"' + (v.po?.vendor_name ?? '') + '\", sender ' + v.email.from)($('ValidationInput').first().json) }}",
+              "type": "string"
+            },
+            {
+              "id": "cf682a68-6ba8-5987-943a-0c8d6dc6582c",
+              "name": "pass_R3",
+              "value": "={{ (v => v.po_found && v.currency_key === v.po_currency_key)($('ValidationInput').first().json) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "079d8e3d-2575-53fa-8182-33cb01e614b0",
+              "name": "detail_R3",
+              "value": "={{ (v => 'Extracted ' + (v.extracted.currency || '?') + ', PO ' + (v.po?.currency || '?'))($('ValidationInput').first().json) }}",
+              "type": "string"
+            },
+            {
+              "id": "47b1f5e6-8948-5552-8d62-e083ad755655",
+              "name": "pass_R4",
+              "value": "={{ (v => v.po_found && v.line_count === v.po_line_count)($('ValidationInput').first().json) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "52037238-c6fd-5fdc-849b-a35e70f71c37",
+              "name": "detail_R4",
+              "value": "={{ (v => v.line_count + ' extracted vs ' + v.po_line_count + ' on PO')($('ValidationInput').first().json) }}",
+              "type": "string"
+            },
+            {
+              "id": "3293d7ca-9718-560c-afa3-39d2babead1b",
+              "name": "pass_R5",
+              "value": "={{ $('ValidationInput').first().json.po_found && $('CollectLineChecks').first().json.line_checks.filter(c => !c.empty).every(c => c.matched) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "315093ff-f3e7-59b0-8d01-5ce3988c5c8b",
+              "name": "detail_R5",
+              "value": "={{ $('CollectLineChecks').first().json.line_checks.filter(c => !c.empty).filter(c => !c.matched).map(c => (c.sku || 'line ' + c.line_no) + ': not on PO').join('; ') || 'All lines matched' }}",
+              "type": "string"
+            },
+            {
+              "id": "401cd7a3-e7ca-505c-bae7-a42288aa1927",
+              "name": "pass_R6",
+              "value": "={{ $('ValidationInput').first().json.po_found && $('CollectLineChecks').first().json.line_checks.filter(c => !c.empty).every(c => !c.qty_over) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "047e6c7a-adea-52f1-88eb-70ac6d814c78",
+              "name": "detail_R6",
+              "value": "={{ $('CollectLineChecks').first().json.line_checks.filter(c => !c.empty).filter(c => c.qty_over).map(c => c.po_sku + ': qty ' + c.quantity + ' > ordered ' + c.po_quantity).join('; ') || 'OK' }}",
+              "type": "string"
+            },
+            {
+              "id": "213f243f-2668-5e4e-9177-cdce5ebb5fcb",
+              "name": "pass_R7",
+              "value": "={{ (t => $('ValidationInput').first().json.po_found && $('CollectLineChecks').first().json.line_checks.filter(c => !c.empty).filter(c => c.matched).every(c => c.price_drift_pct <= t))(($json.rules.find(r => r.rule_id === 'R7')?.threshold ?? 2)) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "940d30f0-6857-5243-80ce-eb484238b1b8",
+              "name": "detail_R7",
+              "value": "={{ (t => $('CollectLineChecks').first().json.line_checks.filter(c => !c.empty).filter(c => c.matched && c.price_drift_pct > t).map(c => c.po_sku + ': price ' + c.unit_price + ' vs PO ' + c.po_unit_price + ' (' + c.price_drift_pct.toFixed(1) + '%)').join('; ') || 'OK')(($json.rules.find(r => r.rule_id === 'R7')?.threshold ?? 2)) }}",
+              "type": "string"
+            },
+            {
+              "id": "9e4b0238-6dfb-5149-9f7a-85419e42c877",
+              "name": "pass_R8",
+              "value": "={{ ((v, sum, t) => v.doc_total !== null && Math.abs(Math.round(v.doc_total * 100) - Math.round(sum * 100)) <= Math.round(t * 100))($('ValidationInput').first().json, $('CollectLineChecks').first().json.line_checks.reduce((s, c) => s + (c.line_total || 0), 0), ($json.rules.find(r => r.rule_id === 'R8')?.threshold ?? 1)) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "8c58ce98-8e3e-5883-ac6f-9a29fa97236c",
+              "name": "detail_R8",
+              "value": "={{ ((v, sum) => 'Total ' + v.doc_total + ' vs lines ' + sum.toFixed(2))($('ValidationInput').first().json, $('CollectLineChecks').first().json.line_checks.reduce((s, c) => s + (c.line_total || 0), 0)) }}",
+              "type": "string"
+            },
+            {
+              "id": "f0c89efc-1425-5cd0-9a41-e45eddb92d04",
+              "name": "pass_R9",
+              "value": "={{ ((v, t) => v.po_found && v.doc_total !== null && v.po_total !== null && (v.po_total ? Math.abs(v.doc_total - v.po_total) / Math.abs(v.po_total) * 100 : (v.doc_total ? 100 : 0)) <= t)($('ValidationInput').first().json, ($json.rules.find(r => r.rule_id === 'R9')?.threshold ?? 1)) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "ac53e60d-cc70-5b2e-bdfe-610548d33508",
+              "name": "detail_R9",
+              "value": "={{ (v => 'Total ' + v.doc_total + ' vs PO ' + (v.po?.total_amount ?? '?'))($('ValidationInput').first().json) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "notes": "One pass_/detail_ pair per rule row. A new row in the table needs its pair here."
+    },
+    {
+      "id": "661dc63a-ec2b-5b16-a151-52c2bc23a758",
+      "name": "ComputeDecision",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        624,
+        1136
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ (() => {\n  const v = $('ValidationInput').first().json;\n  const verdicts = $json;\n  const table = $('CollectRules').first().json.rules;\n  const setting = (id, fallback) => { const r = table.find(r => r.rule_id === id); return r && r.threshold !== null && r.threshold !== undefined ? Number(r.threshold) : fallback; };\n  const rules = table\n    .filter(r => r.kind === 'rule' && r.enabled !== false && ('pass_' + r.rule_id) in verdicts)\n    .sort((a, b) => (a.rule_id < b.rule_id ? -1 : 1))\n    .map(r => ({ id: r.rule_id, name: r.name, pass: verdicts['pass_' + r.rule_id] === true, detail: verdicts['detail_' + r.rule_id] ?? '', weight: Number(r.weight) || 0, hard: r.hard === true }));\n  const wTotal = rules.reduce((s, r) => s + r.weight, 0);\n  const wPass = rules.filter(r => r.pass).reduce((s, r) => s + r.weight, 0);\n  const rulesScore = wTotal ? wPass / wTotal : 0;\n  const autoThreshold = setting('AUTO_THRESHOLD', 0.9), aiWeight = setting('AI_WEIGHT', 0.3);\n  const score = Math.round(((1 - aiWeight) * rulesScore + aiWeight * v.ai_confidence) * 1000) / 1000;\n  const hardFail = rules.some(r => r.hard && !r.pass);\n  const decision = (!hardFail && score >= autoThreshold) ? 'auto' : 'review';\n  return {\n    email: v.email, extracted: v.extracted, po: v.po,\n    rule_results: rules, rules_score: Math.round(rulesScore * 1000) / 1000,\n    ai_confidence: v.ai_confidence, score, threshold: autoThreshold, hard_fail: hardFail,\n    decision, status: decision === 'auto' ? 'auto_approved' : 'pending_review',\n    failed_rules: rules.filter(r => !r.pass).map(r => r.id + ' ' + r.name + ': ' + r.detail),\n  };\n})() }}",
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "notes": "Joins the verdicts to the table: weighted rules score, AI share, hard-rule override, auto or review."
+    },
+    {
+      "id": "74f7605b-9cdd-5c64-96b4-5a6e50ce3fb7",
+      "name": "LogReconciliation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        832,
+        1136
+      ],
       "parameters": {
         "operation": "executeQuery",
         "query": "insert into om_poc.reconciliations (email_id, email_from, email_subject, po_number, vendor_name, document_type,\n  extracted, rule_results, ai_confidence, score, decision, status)\nvalues ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12)\nreturning id, po_number, status, decision, score;",
@@ -221,43 +660,43 @@
           "queryReplacement": "={{ [$json.email.email_id, $json.email.from, $json.email.subject, $json.extracted.po_number || '', $json.extracted.vendor_name || '', $json.extracted.document_type || '', JSON.stringify($json.extracted), JSON.stringify($json.rule_results), $json.ai_confidence, $json.score, $json.decision, $json.status] }}"
         }
       },
-      "id": "74f7605b-9cdd-5c64-96b4-5a6e50ce3fb7",
-      "name": "LogReconciliation",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.7,
-      "position": [
-        416,
-        720
-      ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
       "credentials": {
         "postgres": {
           "id": "REPLACE_ME",
           "name": "Lab Postgres om_poc"
         }
       },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
       "onError": "continueErrorOutput"
     },
     {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reconciliation_id: $json.id, decision: $json.decision, status: $json.status, score: $json.score, failed_rules: $('ApplyValidationRules').first().json.failed_rules }) }}",
-        "options": {}
-      },
       "id": "a7552218-593b-5916-890c-ee46c4d855e9",
       "name": "RespondWithDecision",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        624,
-        720
+        1040,
+        1136
       ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reconciliation_id: $json.id, decision: $json.decision, status: $json.status, score: $json.score, failed_rules: $('ComputeDecision').first().json.failed_rules }) }}",
+        "options": {}
+      },
       "onError": "continueRegularOutput",
       "notes": "Only answers the fixture webhook. On the Outlook path there is no caller, so errors here are ignored."
     },
     {
+      "id": "23d81b2a-1fd5-5f0d-994b-0dd7ab1bcd84",
+      "name": "MeetsAutoThreshold",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        1632
+      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -269,7 +708,7 @@
           "conditions": [
             {
               "id": "99fb4125-9a13-5e9b-9987-ed5a896c0249",
-              "leftValue": "={{ $('ApplyValidationRules').first().json.decision }}",
+              "leftValue": "={{ $('ComputeDecision').first().json.decision }}",
               "rightValue": "auto",
               "operator": {
                 "type": "string",
@@ -280,61 +719,62 @@
           "combinator": "and"
         },
         "options": {}
-      },
-      "id": "23d81b2a-1fd5-5f0d-994b-0dd7ab1bcd84",
-      "name": "MeetsAutoThreshold",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        880,
-        720
-      ]
+      }
     },
     {
-      "parameters": {
-        "fromEmail": "po-bot@om-poc.lab",
-        "toEmail": "ap-review@om-poc.lab",
-        "subject": "=[PO Review] {{ $('ApplyValidationRules').first().json.extracted.po_number }} from {{ $('ApplyValidationRules').first().json.extracted.vendor_name }}: score {{ $('ApplyValidationRules').first().json.score }}",
-        "html": "={{ (() => {\n  const c = $('ApplyValidationRules').first().json;\n  const ex = c.extracted, po = c.po, esc = s => String(s ?? '').replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[m]));\n  const row = (a, b, cls) => `<tr class=\"${cls||''}\"><td>${a}</td><td>${b}</td></tr>`;\n  const rules = c.rule_results.map(r => `<tr style=\"color:${r.pass ? '#1a7f37' : '#b42318'}\"><td>${r.id}</td><td>${esc(r.name)}</td><td>${r.pass ? 'pass' : 'FAIL'}${r.hard ? ' (hard)' : ''}</td><td>${esc(r.detail)}</td></tr>`).join('');\n  const lines = (ex.line_items || []).map(l => { const m = (po?.lines || []).find(p => String(p.sku).toLowerCase() === String(l.sku||'').toLowerCase()) || {};\n    return `<tr><td>${esc(l.sku)}</td><td>${esc(l.quantity)} / ${esc(m.quantity ?? '-')}</td><td>${esc(l.unit_price)} / ${esc(m.unit_price ?? '-')}</td><td>${esc(l.line_total)}</td></tr>`; }).join('');\n  const resume = $execution.resumeUrl;\n  const base = resume + (resume.includes('?') ? '&' : '?');\n  return `<html><body style=\"font-family:Arial,sans-serif;font-size:13px\">\n<h2>PO reconciliation needs a decision</h2>\n<p><b>${esc(ex.po_number)}</b> from <b>${esc(ex.vendor_name)}</b> (${esc(ex.document_type)}), reconciliation #${$('LogReconciliation').first().json.id}</p>\n<p>Score <b>${c.score}</b> against threshold ${c.threshold}. ${c.hard_fail ? 'A hard rule failed, so this cannot post automatically.' : 'Below the auto-post threshold.'}</p>\n<p><a href=\"${base}decision=approve\" style=\"background:#1a7f37;color:#fff;padding:10px 18px;text-decoration:none;border-radius:4px\">Approve and post to SAP</a>\n&nbsp;&nbsp;<a href=\"${base}decision=reject\" style=\"background:#b42318;color:#fff;padding:10px 18px;text-decoration:none;border-radius:4px\">Reject</a></p>\n<h3>Rules</h3><table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr><th>#</th><th>Rule</th><th>Result</th><th>Detail</th></tr>${rules}</table>\n<h3>Lines (document / PO)</h3><table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr><th>SKU</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr>${lines || '<tr><td colspan=4>none extracted</td></tr>'}</table>\n<h3>Header</h3><table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">${row('Document total', esc(ex.total_amount) + ' ' + esc(ex.currency))}${row('PO total', po ? esc(po.total_amount) + ' ' + esc(po.currency) : 'PO not found')}${row('Vendor reference', esc(ex.vendor_reference))}${row('Document date', esc(ex.document_date))}${row('Sender', esc(c.email.from))}${row('Subject', esc(c.email.subject))}${row('Model notes', esc(ex.notes))}</table>\n<p style=\"color:#666\">Execution ${$execution.id}. Links expire with the execution.</p>\n</body></html>`;\n})() }}",
-        "options": {
-          "appendAttribution": false
-        }
-      },
       "id": "af90b55a-5c21-51c2-9c38-2edeae4c4e86",
       "name": "RequestHumanReview",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        1088,
-        720
+        208,
+        1632
       ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
-      "webhookId": "23663ca2-6acb-4045-98d5-cc715f83ad26",
+      "parameters": {
+        "fromEmail": "po-bot@om-poc.lab",
+        "toEmail": "ap-review@om-poc.lab",
+        "subject": "=[PO Review] {{ $('ComputeDecision').first().json.extracted.po_number }} from {{ $('ComputeDecision').first().json.extracted.vendor_name }}: score {{ $('ComputeDecision').first().json.score }}",
+        "emailFormat": "html",
+        "html": "={{ (() => {\n  const c = $('ComputeDecision').first().json;\n  const ex = c.extracted, po = c.po, esc = s => String(s ?? '').replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[m]));\n  const row = (a, b, cls) => `<tr class=\"${cls||''}\"><td>${a}</td><td>${b}</td></tr>`;\n  const rules = c.rule_results.map(r => `<tr style=\"color:${r.pass ? '#1a7f37' : '#b42318'}\"><td>${r.id}</td><td>${esc(r.name)}</td><td>${r.pass ? 'pass' : 'FAIL'}${r.hard ? ' (hard)' : ''}</td><td>${esc(r.detail)}</td></tr>`).join('');\n  const lines = (ex.line_items || []).map(l => { const m = (po?.lines || []).find(p => String(p.sku).toLowerCase() === String(l.sku||'').toLowerCase()) || {};\n    return `<tr><td>${esc(l.sku)}</td><td>${esc(l.quantity)} / ${esc(m.quantity ?? '-')}</td><td>${esc(l.unit_price)} / ${esc(m.unit_price ?? '-')}</td><td>${esc(l.line_total)}</td></tr>`; }).join('');\n  const resume = $execution.resumeUrl;\n  const base = resume + (resume.includes('?') ? '&' : '?');\n  return `<html><body style=\"font-family:Arial,sans-serif;font-size:13px\">\n<h2>PO reconciliation needs a decision</h2>\n<p><b>${esc(ex.po_number)}</b> from <b>${esc(ex.vendor_name)}</b> (${esc(ex.document_type)}), reconciliation #${$('LogReconciliation').first().json.id}</p>\n<p>Score <b>${c.score}</b> against threshold ${c.threshold}. ${c.hard_fail ? 'A hard rule failed, so this cannot post automatically.' : 'Below the auto-post threshold.'}</p>\n<p><a href=\"${base}decision=approve\" style=\"background:#1a7f37;color:#fff;padding:10px 18px;text-decoration:none;border-radius:4px\">Approve and post to SAP</a>\n&nbsp;&nbsp;<a href=\"${base}decision=reject\" style=\"background:#b42318;color:#fff;padding:10px 18px;text-decoration:none;border-radius:4px\">Reject</a></p>\n<h3>Rules</h3><table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr><th>#</th><th>Rule</th><th>Result</th><th>Detail</th></tr>${rules}</table>\n<h3>Lines (document / PO)</h3><table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr><th>SKU</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr>${lines || '<tr><td colspan=4>none extracted</td></tr>'}</table>\n<h3>Header</h3><table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">${row('Document total', esc(ex.total_amount) + ' ' + esc(ex.currency))}${row('PO total', po ? esc(po.total_amount) + ' ' + esc(po.currency) : 'PO not found')}${row('Vendor reference', esc(ex.vendor_reference))}${row('Document date', esc(ex.document_date))}${row('Sender', esc(c.email.from))}${row('Subject', esc(c.email.subject))}${row('Model notes', esc(ex.notes))}</table>\n<p style=\"color:#666\">Execution ${$execution.id}. Links expire with the execution.</p>\n</body></html>`;\n})() }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
       "credentials": {
         "smtp": {
           "id": "REPLACE_ME",
           "name": "Lab Mailpit SMTP"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
-      "parameters": {
-        "resume": "webhook",
-        "options": {}
-      },
       "id": "fc457287-8dc4-51b4-b02b-95d5dfdae9ba",
       "name": "WaitForReviewerDecision",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1296,
-        720
+        416,
+        1632
       ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "GET",
+        "options": {}
+      },
       "webhookId": "0d4f4db9-d95f-5580-9387-2c78d0a80b4c"
     },
     {
+      "id": "7f551c62-da22-5ce4-b5fb-070a109f6ad7",
+      "name": "ReviewerApproved",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        624,
+        1632
+      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -357,113 +797,182 @@
           "combinator": "and"
         },
         "options": {}
-      },
-      "id": "7f551c62-da22-5ce4-b5fb-070a109f6ad7",
-      "name": "ReviewerApproved",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        1504,
-        720
-      ]
+      }
     },
     {
-      "parameters": {
-        "jsCode": "// ORDERS05 IDoc from the validated extraction, plus the row for the Snowflake landing table.\nconst ctx = $('ApplyValidationRules').first().json;\nconst recId = $('LogReconciliation').first().json.id;\nconst ex = ctx.extracted, po = ctx.po || {}, lines = po.lines || [];\nconst esc = s => String(s ?? '').replace(/[<>&'\"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', \"'\": '&apos;', '\"': '&quot;' }[c]));\nconst d = v => String(v ?? '').slice(0, 10).replace(/-/g, '');\nconst now = new Date().toISOString();\nconst d8 = d(now), t6 = now.slice(11, 19).replace(/:/g, '');\nconst idocNumber = `${d8}${t6}${String(recId).padStart(6, '0')}`;\nconst msgType = { order_confirmation: 'ORDRSP', invoice: 'INVOIC', shipping_notice: 'DESADV' }[ex.document_type] || 'ORDRSP';\n\nconst segs = (ex.line_items || []).map((l, i) => {\n  const m = lines.find(p => String(p.sku).toLowerCase() === String(l.sku ?? '').toLowerCase()) || lines[i] || {};\n  const promised = l.promised_date ? `<E1EDP20 SEGMENT=\"1\"><WMENG>${esc(l.quantity)}</WMENG><EDATU>${d(l.promised_date)}</EDATU></E1EDP20>` : '';\n  return [\n    '    <E1EDP01 SEGMENT=\"1\">',\n    `      <POSEX>${String(m.line_no ?? l.line_no ?? i + 1).padStart(6, '0')}</POSEX>`,\n    `      <MENGE>${esc(l.quantity)}</MENGE><MENEE>EA</MENEE>`,\n    `      <VPREI>${esc(l.unit_price)}</VPREI><NETWR>${esc(l.line_total)}</NETWR>`,\n    `      <E1EDP19 SEGMENT=\"1\"><QUALF>002</QUALF><IDTLF>${esc(m.sku ?? l.sku)}</IDTLF><KTEXT>${esc(l.description ?? m.description)}</KTEXT></E1EDP19>`,\n    promised ? `      ${promised}` : null,\n    '    </E1EDP01>',\n  ].filter(Boolean).join('\\n');\n}).join('\\n');\n\nconst xml = `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ORDERS05>\n  <IDOC BEGIN=\"1\">\n    <EDI_DC40 SEGMENT=\"1\">\n      <TABNAM>EDI_DC40</TABNAM><DOCNUM>${idocNumber}</DOCNUM><DIRECT>2</DIRECT>\n      <IDOCTYP>ORDERS05</IDOCTYP><MESTYP>${msgType}</MESTYP>\n      <SNDPOR>N8N_POC</SNDPOR><SNDPRT>LS</SNDPRT><SNDPRN>N8N_OM_POC</SNDPRN>\n      <RCVPOR>SAPERP</RCVPOR><RCVPRT>LS</RCVPRT><RCVPRN>OM_ERP</RCVPRN>\n      <CREDAT>${d8}</CREDAT><CRETIM>${t6}</CRETIM>\n    </EDI_DC40>\n    <E1EDK01 SEGMENT=\"1\"><CURCY>${esc(ex.currency || po.currency)}</CURCY><BELNR>${esc(ex.vendor_reference)}</BELNR></E1EDK01>\n    <E1EDK02 SEGMENT=\"1\"><QUALF>001</QUALF><BELNR>${esc(po.po_number)}</BELNR><DATUM>${d(po.order_date)}</DATUM></E1EDK02>\n    <E1EDK02 SEGMENT=\"1\"><QUALF>002</QUALF><BELNR>${esc(ex.vendor_reference)}</BELNR><DATUM>${d(ex.document_date)}</DATUM></E1EDK02>\n    <E1EDKA1 SEGMENT=\"1\"><PARVW>LF</PARVW><PARTN>${esc(po.vendor_id)}</PARTN><NAME1>${esc(po.vendor_name)}</NAME1></E1EDKA1>\n${segs}\n    <E1EDS01 SEGMENT=\"1\"><SUMID>002</SUMID><SUMME>${esc(ex.total_amount)}</SUMME><SUNIT>${esc(ex.currency || po.currency)}</SUNIT></E1EDS01>\n  </IDOC>\n</ORDERS05>`;\n\nreturn [{ json: {\n  reconciliation_id: recId, idoc_number: idocNumber, idoc_type: 'ORDERS05', message_type: msgType, xml,\n  snowflake_row: {\n    reconciliation_id: recId, po_number: po.po_number, vendor_name: po.vendor_name,\n    document_type: ex.document_type, currency: ex.currency || po.currency, total_amount: ex.total_amount,\n    line_count: (ex.line_items || []).length, ai_confidence: ctx.ai_confidence, score: ctx.score,\n    decision: ctx.decision, idoc_number: idocNumber,\n  },\n}}];"
-      },
-      "id": "58765259-3eb9-5fff-9c00-c727d4c4c5ef",
-      "name": "BuildIdocXml",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "21615528-efb7-5849-aef2-0e57ed46eeeb",
+      "name": "NotifyOpsFailure",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
       "position": [
-        0,
-        1216
-      ]
-    },
-    {
+        880,
+        1632
+      ],
       "parameters": {
-        "operation": "executeQuery",
-        "query": "insert into om_poc.idoc_outbox (reconciliation_id, idoc_number, idoc_type, xml)\nvalues ($1, $2, $3, $4)\nreturning id, idoc_number, status;",
+        "fromEmail": "po-bot@om-poc.lab",
+        "toEmail": "n8n-ops@om-poc.lab",
+        "subject": "=[PO Reconciliation] pipeline error in execution {{ $execution.id }}",
+        "emailFormat": "text",
+        "text": "=A node failed and the email was not posted.\n\nError: {{ $json.error?.message || $json.error || JSON.stringify($json).slice(0, 800) }}\nEmail: {{ $('RouteAttachment').first().json.subject }} from {{ $('RouteAttachment').first().json.from }}\nExecution: {{ $execution.id }}\n",
         "options": {
-          "queryReplacement": "={{ [$json.reconciliation_id, $json.idoc_number, $json.idoc_type, $json.xml] }}"
+          "appendAttribution": false
         }
       },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_ME",
+          "name": "Lab Mailpit SMTP"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "90b59633-33b9-586c-8bcf-b59755c64118",
+      "name": "PrepareIdocFields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        0,
+        2064
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ (() => {\n  const c = $('ComputeDecision').first().json;\n  const recId = $('LogReconciliation').first().json.id;\n  const ex = c.extracted, po = c.po || {};\n  const stamp = $now.toUTC().toFormat('yyyyLLddHHmmss');\n  const idocNumber = stamp + String(recId).padStart(6, '0');\n  const messageType = { order_confirmation: 'ORDRSP', invoice: 'INVOIC', shipping_notice: 'DESADV' }[ex.document_type] || 'ORDRSP';\n  return {\n    reconciliation_id: recId, idoc_number: idocNumber, idoc_type: 'ORDERS05', message_type: messageType,\n    created_date: stamp.slice(0, 8), created_time: stamp.slice(8),\n    snowflake_row: {\n      reconciliation_id: recId, po_number: po.po_number, vendor_name: po.vendor_name,\n      document_type: ex.document_type, currency: ex.currency || po.currency, total_amount: ex.total_amount,\n      line_count: (ex.line_items || []).length, ai_confidence: c.ai_confidence, score: c.score,\n      decision: c.decision, idoc_number: idocNumber,\n    },\n  };\n})() }}",
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "notes": "IDoc number, message type and the Snowflake landing row. Downstream reads $('PrepareIdocFields')."
+    },
+    {
+      "id": "e87c6a64-9a17-50d8-a025-2d4187956db0",
+      "name": "BuildIdocTree",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        208,
+        2064
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ (() => {\n  const h = $json;\n  const c = $('ComputeDecision').first().json;\n  const ex = c.extracted, po = c.po || {}, poLines = po.lines || [];\n  const d = v => String(v ?? '').slice(0, 10).replace(/-/g, '');\n  const seg = { SEGMENT: '1' };\n  const items = (ex.line_items || []).map((l, i) => {\n    const m = poLines.find(p => String(p.sku).toLowerCase() === String(l.sku ?? '').toLowerCase()) || poLines[i] || {};\n    const item = {\n      attr: seg,\n      POSEX: String(m.line_no ?? l.line_no ?? i + 1).padStart(6, '0'),\n      MENGE: l.quantity ?? '', MENEE: 'EA', VPREI: l.unit_price ?? '', NETWR: l.line_total ?? '',\n      E1EDP19: { attr: seg, QUALF: '002', IDTLF: m.sku ?? l.sku ?? '', KTEXT: l.description ?? m.description ?? '' },\n    };\n    if (l.promised_date) item.E1EDP20 = { attr: seg, WMENG: l.quantity ?? '', EDATU: d(l.promised_date) };\n    return item;\n  });\n  const idoc = {\n    attr: { BEGIN: '1' },\n    EDI_DC40: {\n      attr: seg, TABNAM: 'EDI_DC40', DOCNUM: h.idoc_number, DIRECT: '2', IDOCTYP: 'ORDERS05', MESTYP: h.message_type,\n      SNDPOR: 'N8N_POC', SNDPRT: 'LS', SNDPRN: 'N8N_OM_POC', RCVPOR: 'SAPERP', RCVPRT: 'LS', RCVPRN: 'OM_ERP',\n      CREDAT: h.created_date, CRETIM: h.created_time,\n    },\n    E1EDK01: { attr: seg, CURCY: ex.currency || po.currency || '', BELNR: ex.vendor_reference ?? '' },\n    E1EDK02: [\n      { attr: seg, QUALF: '001', BELNR: po.po_number ?? '', DATUM: d(po.order_date) },\n      { attr: seg, QUALF: '002', BELNR: ex.vendor_reference ?? '', DATUM: d(ex.document_date) },\n    ],\n    E1EDKA1: { attr: seg, PARVW: 'LF', PARTN: po.vendor_id ?? '', NAME1: po.vendor_name ?? '' },\n    E1EDP01: items,\n    E1EDS01: { attr: seg, SUMID: '002', SUMME: ex.total_amount ?? '', SUNIT: ex.currency || po.currency || '' },\n  };\n  return { IDOC: idoc };\n})() }}",
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "notes": "ORDERS05 as a JSON tree (segments as keys, attributes under attr). RenderIdocXml serializes and escapes it."
+    },
+    {
+      "id": "62ce5405-3a6b-51b4-8a19-ad6c4d2db798",
+      "name": "RenderIdocXml",
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        416,
+        2064
+      ],
+      "parameters": {
+        "mode": "jsonToxml",
+        "dataPropertyName": "xml",
+        "options": {
+          "rootName": "ORDERS05",
+          "attrkey": "attr",
+          "headless": false
+        }
+      }
+    },
+    {
       "id": "1bbe966d-550a-55ac-9a5a-92d924a6faaf",
       "name": "QueueIdocForSap",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        208,
-        1216
+        624,
+        2064
       ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into om_poc.idoc_outbox (reconciliation_id, idoc_number, idoc_type, xml)\nvalues ($1, $2, $3, $4)\nreturning id, idoc_number, status;",
+        "options": {
+          "queryReplacement": "={{ [$('PrepareIdocFields').first().json.reconciliation_id, $('PrepareIdocFields').first().json.idoc_number, $('PrepareIdocFields').first().json.idoc_type, $json.xml] }}"
+        }
+      },
       "credentials": {
         "postgres": {
           "id": "REPLACE_ME",
           "name": "Lab Postgres om_poc"
         }
       },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
       "onError": "continueErrorOutput",
       "notes": "SAP stand-in: an outbox table. Customer instance: HTTP Request to the SAP PI/PO or CPI IDoc endpoint, or a file drop the IDoc adapter polls."
     },
     {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "insert into om_poc.reconciled_po_responses (reconciliation_id, po_number, vendor_name, document_type, currency,\n  total_amount, line_count, ai_confidence, score, decision, idoc_number)\nvalues ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\non conflict (reconciliation_id) do update set idoc_number = excluded.idoc_number, posted_at = now()\nreturning reconciliation_id;",
-        "options": {
-          "queryReplacement": "={{ (r => [r.reconciliation_id, r.po_number, r.vendor_name, r.document_type, r.currency, r.total_amount, r.line_count, r.ai_confidence, r.score, r.decision, r.idoc_number])($('BuildIdocXml').first().json.snowflake_row) }}"
-        }
-      },
       "id": "5856453b-83d5-50d5-8ede-9ac010ec6c25",
       "name": "WriteSnowflakeLandingRow",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        416,
-        1216
+        832,
+        2064
       ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into om_poc.reconciled_po_responses (reconciliation_id, po_number, vendor_name, document_type, currency,\n  total_amount, line_count, ai_confidence, score, decision, idoc_number)\nvalues ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\non conflict (reconciliation_id) do update set idoc_number = excluded.idoc_number, posted_at = now()\nreturning reconciliation_id;",
+        "options": {
+          "queryReplacement": "={{ (r => [r.reconciliation_id, r.po_number, r.vendor_name, r.document_type, r.currency, r.total_amount, r.line_count, r.ai_confidence, r.score, r.decision, r.idoc_number])($('PrepareIdocFields').first().json.snowflake_row) }}"
+        }
+      },
       "credentials": {
         "postgres": {
           "id": "REPLACE_ME",
           "name": "Lab Postgres om_poc"
         }
       },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
       "onError": "continueErrorOutput",
       "notes": "Snowflake stand-in. Customer instance: the Snowflake node with the same column list."
     },
     {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "update om_poc.reconciliations set status = 'posted', idoc_number = $2, reviewer_decision = $3, updated_at = now()\nwhere id = $1\nreturning id, po_number, status, idoc_number;",
-        "options": {
-          "queryReplacement": "={{ [$('BuildIdocXml').first().json.reconciliation_id, $('BuildIdocXml').first().json.idoc_number, $('ApplyValidationRules').first().json.decision === 'auto' ? 'auto' : 'approved'] }}"
-        }
-      },
       "id": "bbe9f0e0-577f-5809-9c6c-6808d134934e",
       "name": "MarkReconciliationPosted",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
       "position": [
-        624,
-        1216
+        1040,
+        2064
       ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update om_poc.reconciliations set status = 'posted', idoc_number = $2, reviewer_decision = $3, updated_at = now()\nwhere id = $1\nreturning id, po_number, status, idoc_number;",
+        "options": {
+          "queryReplacement": "={{ [$('PrepareIdocFields').first().json.reconciliation_id, $('PrepareIdocFields').first().json.idoc_number, $('ComputeDecision').first().json.decision === 'auto' ? 'auto' : 'approved'] }}"
+        }
+      },
       "credentials": {
         "postgres": {
           "id": "REPLACE_ME",
           "name": "Lab Postgres om_poc"
         }
       },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
       "onError": "continueErrorOutput"
     },
     {
+      "id": "3b598802-badd-5279-bf78-b083883ee333",
+      "name": "MarkReconciliationRejected",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1040,
+        2336
+      ],
       "parameters": {
         "operation": "executeQuery",
         "query": "update om_poc.reconciliations set status = 'rejected', reviewer_decision = 'reject', updated_at = now()\nwhere id = $1\nreturning id, po_number, status, null::text as idoc_number;",
@@ -471,90 +980,51 @@
           "queryReplacement": "={{ [$('LogReconciliation').first().json.id] }}"
         }
       },
-      "id": "3b598802-badd-5279-bf78-b083883ee333",
-      "name": "MarkReconciliationRejected",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.7,
-      "position": [
-        624,
-        1488
-      ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
       "credentials": {
         "postgres": {
           "id": "REPLACE_ME",
           "name": "Lab Postgres om_poc"
         }
       },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
       "onError": "continueErrorOutput"
     },
     {
-      "parameters": {
-        "fromEmail": "po-bot@om-poc.lab",
-        "toEmail": "ap-team@om-poc.lab",
-        "subject": "=[PO Reconciliation] {{ $json.po_number }} {{ $json.status }}",
-        "emailFormat": "text",
-        "text": "=Reconciliation #{{ $json.id }} for {{ $json.po_number }} is {{ $json.status }}.\n{{ $json.idoc_number ? 'IDoc ' + $json.idoc_number + ' queued for SAP and the Snowflake landing row is written.' : 'Nothing was posted.' }}\n\nDecision path: {{ $('ApplyValidationRules').first().json.decision }} (score {{ $('ApplyValidationRules').first().json.score }}, threshold {{ $('ApplyValidationRules').first().json.threshold }})\nFailed rules: {{ $('ApplyValidationRules').first().json.failed_rules.join('; ') || 'none' }}\nExecution: {{ $execution.id }}\n",
-        "options": {
-          "appendAttribution": false
-        }
-      },
       "id": "0d096f23-0355-5d1f-91fb-608dda5e1d98",
       "name": "NotifyApOutcome",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        832,
-        1216
+        1248,
+        2064
       ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
-      "webhookId": "4c5a0c1f-c055-456b-95ab-8a8915ab7460",
-      "credentials": {
-        "smtp": {
-          "id": "REPLACE_ME",
-          "name": "Lab Mailpit SMTP"
-        }
-      }
-    },
-    {
       "parameters": {
         "fromEmail": "po-bot@om-poc.lab",
-        "toEmail": "n8n-ops@om-poc.lab",
-        "subject": "=[PO Reconciliation] pipeline error in execution {{ $execution.id }}",
+        "toEmail": "ap-team@om-poc.lab",
+        "subject": "=[PO Reconciliation] {{ $json.po_number }} {{ $json.status }}",
         "emailFormat": "text",
-        "text": "=A node failed and the email was not posted.\n\nError: {{ $json.error?.message || $json.error || JSON.stringify($json).slice(0, 800) }}\nEmail: {{ $('NormalizeEmail').first().json.subject }} from {{ $('NormalizeEmail').first().json.from }}\nExecution: {{ $execution.id }}\n",
+        "text": "=Reconciliation #{{ $json.id }} for {{ $json.po_number }} is {{ $json.status }}.\n{{ $json.idoc_number ? 'IDoc ' + $json.idoc_number + ' queued for SAP and the Snowflake landing row is written.' : 'Nothing was posted.' }}\n\nDecision path: {{ $('ComputeDecision').first().json.decision }} (score {{ $('ComputeDecision').first().json.score }}, threshold {{ $('ComputeDecision').first().json.threshold }})\nFailed rules: {{ $('ComputeDecision').first().json.failed_rules.join('; ') || 'none' }}\nExecution: {{ $execution.id }}\n",
         "options": {
           "appendAttribution": false
         }
       },
-      "id": "21615528-efb7-5849-aef2-0e57ed46eeeb",
-      "name": "NotifyOpsFailure",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
-      "position": [
-        1088,
-        1216
-      ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
-      "webhookId": "65d18e66-e9ef-48bf-a258-5ea01996fe72",
       "credentials": {
         "smtp": {
           "id": "REPLACE_ME",
           "name": "Lab Mailpit SMTP"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
-        "content": "## 1. Intake\n\nVendor replies arrive in the AP mailbox (Outlook trigger, disabled on the lab). The fixture webhook plays the same role for testing. NormalizeEmail turns either shape into one envelope with any PDF in $binary.attachment.",
-        "height": 720,
-        "width": 448,
+        "content": "## 1. Intake\n\nVendor replies arrive in the AP mailbox (Outlook trigger, disabled on the lab). The fixture webhook plays the same role for testing. One Edit Fields per source maps it to the shared envelope; RouteAttachment sends a base64 PDF to the decoder, a binary PDF straight to the extractor, and plain text onward.",
+        "width": 656,
+        "height": 688,
         "color": 4
       },
       "id": "zone-01",
@@ -563,14 +1033,14 @@
       "typeVersion": 1,
       "position": [
         -64,
-        -240
+        -208
       ]
     },
     {
       "parameters": {
-        "content": "## 2. Decipher\n\nPDF text is pulled with Extract from File and joined with the email body. The Information Extractor reads that text against a fixed JSON schema (PO, vendor, lines, totals, self-reported confidence). No tools, no agent loop.",
-        "height": 720,
-        "width": 1024,
+        "content": "## 2. Decipher\n\nConvert to File turns the base64 into a PDF, Extract from File pulls the text, and BuildDocumentText joins it with the email body. The Information Extractor reads that text against a fixed JSON schema (PO, vendor, lines, totals, self-reported confidence). No tools, no agent loop.",
+        "width": 864,
+        "height": 688,
         "color": 5
       },
       "id": "zone-02",
@@ -578,15 +1048,15 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        400,
-        -240
+        608,
+        -208
       ]
     },
     {
       "parameters": {
-        "content": "## 3. Validate against the PO\n\nThe PO on record is fetched (SAP stand-in). Nine weighted business rules run over the extraction: PO exists, vendor, currency, lines map, quantities, prices within 2%, totals within 1%. Score = 70% rules + 30% model confidence; hard rules always force review. Every attempt is logged and the caller gets the decision back.",
-        "height": 400,
-        "width": 864,
+        "content": "## 3. Match lines against the PO\n\nThe PO on record is fetched (SAP stand-in). ValidationInput holds the header facts. Split Out gives one item per extracted line, CheckLine finds its PO line and measures quantity and price drift, Aggregate folds the line checks back into one item.",
+        "width": 1072,
+        "height": 384,
         "color": 5
       },
       "id": "zone-03",
@@ -600,26 +1070,26 @@
     },
     {
       "parameters": {
-        "content": "## 4. HITL gate\n\nScore >= 0.90 with no hard failure posts automatically. Anything else emails the AP reviewer a side-by-side with Approve / Reject links and the execution waits on that click.",
-        "height": 400,
-        "width": 864,
-        "color": 4
+        "content": "## 4. Score against the rule table\n\nThe data table om_poc_validation_rules carries the nine rules (weight, hard, enabled, threshold) and the two settings AUTO_THRESHOLD and AI_WEIGHT. EvaluateRules gives one pass/detail pair per rule, ComputeDecision joins them to the table: score = 70% weighted rules + 30% model confidence, hard rules force review. Every attempt is logged and the caller gets the decision back.",
+        "width": 1280,
+        "height": 384,
+        "color": 5
       },
       "id": "zone-04",
       "name": "zone-04",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        816,
-        528
+        -64,
+        960
       ]
     },
     {
       "parameters": {
-        "content": "## 5. Convert and post\n\nValidated data becomes an ORDERS05 IDoc (ORDRSP / INVOIC / DESADV by document type), is queued for SAP, written to the Snowflake landing table, and the reconciliation is marked posted or rejected. AP gets one outcome email either way.",
-        "height": 720,
-        "width": 1072,
-        "color": 3
+        "content": "## 5. HITL gate\n\nScore >= AUTO_THRESHOLD with no hard failure posts automatically. Anything else emails the AP reviewer a side-by-side with Approve / Reject links and the execution waits on that click.",
+        "width": 864,
+        "height": 448,
+        "color": 4
       },
       "id": "zone-05",
       "name": "zone-05",
@@ -627,14 +1097,14 @@
       "typeVersion": 1,
       "position": [
         -64,
-        976
+        1392
       ]
     },
     {
       "parameters": {
-        "content": "## 6. Failures\n\nEvery fallible node routes its error output here. Ops gets the error, the email subject and the execution id. Nothing is posted on a failure.",
-        "height": 720,
+        "content": "## 7. Failures\n\nEvery fallible node routes its error output here. Ops gets the error, the email subject and the execution id. Nothing is posted on a failure.",
         "width": 304,
+        "height": 448,
         "color": 7
       },
       "id": "zone-06",
@@ -642,15 +1112,31 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1024,
-        976
+        816,
+        1392
       ]
     },
     {
       "parameters": {
-        "content": "## O&M PoC: Purchase Order Reconciliation\n\nDecipher non-EDI vendor email responses (PDF or text), validate with business rules plus AI, gate on a HITL threshold, and post validated data as XML/IDoc to SAP and Snowflake.\n\nLab stand-ins and what the customer swaps:\n1. WatchOutlookInbox: Outlook OAuth2 credential on the AP mailbox, plus a Get Attachment step.\n2. LmStudioExtractorModel: the approved LLM provider (Azure OpenAI, Bedrock, OpenRouter).\n3. LookupPurchaseOrder: SAP OData/RFC read of EKKO/EKPO, same output shape.\n4. QueueIdocForSap: HTTP Request to the SAP PI/PO or CPI IDoc endpoint.\n5. WriteSnowflakeLandingRow: the Snowflake node, same column list.\n\nTuning lives at the top of ApplyValidationRules: AUTO_THRESHOLD 0.90, PRICE_TOLERANCE_PCT 2, TOTAL_TOLERANCE_PCT 1, AI_WEIGHT 0.30.\n\nTest: POST a fixture to /webhook/om-po-response (see data/fixtures). Mail lands in Mailpit at localhost:8025.",
-        "height": 528,
+        "content": "## 6. Convert and post\n\nPrepareIdocFields sets the IDoc number and message type (ORDRSP / INVOIC / DESADV by document type), BuildIdocTree lays out ORDERS05 as JSON, the XML node renders it. The IDoc is queued for SAP, the Snowflake landing row is written, and the reconciliation is marked posted or rejected. AP gets one outcome email either way.",
+        "width": 1488,
+        "height": 656,
+        "color": 3
+      },
+      "id": "zone-07",
+      "name": "zone-07",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        1888
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Purchase Order Reconciliation\n\nDecipher non-EDI vendor email responses (PDF or text), validate with business rules plus AI, gate on a HITL threshold, and post validated data as XML/IDoc to SAP and Snowflake. Native nodes only: no Code nodes, no community nodes.\n\nLab stand-ins and what the customer swaps:\n1. WatchOutlookInbox: Outlook OAuth2 credential on the AP mailbox, plus a Get Attachment step before NormalizeOutlookEmail.\n2. LmStudioExtractorModel: the approved LLM provider (Anthropic).\n3. LookupPurchaseOrder: SAP OData/RFC read of EKKO/EKPO, same output shape.\n4. QueueIdocForSap: HTTP Request to the SAP PI/PO or CPI IDoc endpoint, or the file port.\n5. WriteSnowflakeLandingRow: the Snowflake node, same column list.\n\nTuning lives in the data table om_poc_validation_rules: weights, hard flags, enabled, per-rule thresholds, AUTO_THRESHOLD 0.90, AI_WEIGHT 0.30. Seed: scripts/seed-validation-rules.py.\n\nTest: POST a fixture to /webhook/om-po-response (see data/fixtures). Mail lands in Mailpit at localhost:8025.",
         "width": 720,
+        "height": 576,
         "color": 6
       },
       "id": "zone-panel-1",
@@ -659,7 +1145,7 @@
       "typeVersion": 1,
       "position": [
         -64,
-        -784
+        -800
       ]
     }
   ],
@@ -668,7 +1154,7 @@
       "main": [
         [
           {
-            "node": "NormalizeEmail",
+            "node": "NormalizeOutlookEmail",
             "type": "main",
             "index": 0
           }
@@ -679,26 +1165,44 @@
       "main": [
         [
           {
-            "node": "NormalizeEmail",
+            "node": "NormalizeFixtureEmail",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "NormalizeEmail": {
+    "NormalizeOutlookEmail": {
       "main": [
         [
           {
-            "node": "HasPdfAttachment",
+            "node": "RouteAttachment",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "HasPdfAttachment": {
+    "NormalizeFixtureEmail": {
       "main": [
+        [
+          {
+            "node": "RouteAttachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RouteAttachment": {
+      "main": [
+        [
+          {
+            "node": "DecodePdfAttachment",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "ExtractPdfText",
@@ -709,6 +1213,17 @@
         [
           {
             "node": "BuildDocumentText",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DecodePdfAttachment": {
+      "main": [
+        [
+          {
+            "node": "ExtractPdfText",
             "type": "main",
             "index": 0
           }
@@ -777,7 +1292,7 @@
       "main": [
         [
           {
-            "node": "ApplyValidationRules",
+            "node": "ValidationInput",
             "type": "main",
             "index": 0
           }
@@ -791,7 +1306,84 @@
         ]
       ]
     },
-    "ApplyValidationRules": {
+    "ValidationInput": {
+      "main": [
+        [
+          {
+            "node": "SplitOutExtractedLines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SplitOutExtractedLines": {
+      "main": [
+        [
+          {
+            "node": "CheckLine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CheckLine": {
+      "main": [
+        [
+          {
+            "node": "CollectLineChecks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CollectLineChecks": {
+      "main": [
+        [
+          {
+            "node": "GetValidationRules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetValidationRules": {
+      "main": [
+        [
+          {
+            "node": "CollectRules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CollectRules": {
+      "main": [
+        [
+          {
+            "node": "EvaluateRules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "EvaluateRules": {
+      "main": [
+        [
+          {
+            "node": "ComputeDecision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ComputeDecision": {
       "main": [
         [
           {
@@ -835,7 +1427,7 @@
       "main": [
         [
           {
-            "node": "BuildIdocXml",
+            "node": "PrepareIdocFields",
             "type": "main",
             "index": 0
           }
@@ -875,7 +1467,7 @@
       "main": [
         [
           {
-            "node": "BuildIdocXml",
+            "node": "PrepareIdocFields",
             "type": "main",
             "index": 0
           }
@@ -889,7 +1481,29 @@
         ]
       ]
     },
-    "BuildIdocXml": {
+    "PrepareIdocFields": {
+      "main": [
+        [
+          {
+            "node": "BuildIdocTree",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BuildIdocTree": {
+      "main": [
+        [
+          {
+            "node": "RenderIdocXml",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RenderIdocXml": {
       "main": [
         [
           {
@@ -977,8 +1591,11 @@
     "executionOrder": "v1",
     "saveManualExecutions": true,
     "saveDataSuccessExecution": "all",
-    "saveDataErrorExecution": "all",
-    "binaryMode": "separate"
+    "saveDataErrorExecution": "all"
   },
-  "pinData": {}
+  "tags": [
+    "om-poc",
+    "po-reconciliation",
+    "api"
+  ]
 }
